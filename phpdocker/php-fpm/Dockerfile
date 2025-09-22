@@ -1,4 +1,4 @@
-FROM phpdockerio/php:8.2-fpm
+FROM phpdockerio/php:8.4-fpm
 WORKDIR "/application"
 
 ARG USER_NAME=host-user
@@ -26,11 +26,11 @@ RUN if getent passwd ${USER_ID} > /dev/null; then \
 RUN apt-get update; \
     apt-get -y --no-install-recommends install \
         git \
-        php8.2-bcmath \
-        php8.2-gd \
-        php8.2-mysql \
-        php8.2-intl \
-        php8.2-xdebug; \
+        php8.4-bcmath \
+        php8.4-gd \
+        php8.4-mysql \
+        php8.4-intl \
+        php8.4-xdebug; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /usr/share/doc/*
 

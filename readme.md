@@ -1,5 +1,5 @@
 # Docker for Laravel
-PHP 8.2, Composer, MySQL 9.1, Ngnix, xDebug 
+PHP 8.4, Composer, MySQL 9.1, Ngnix, xDebug 
 
 ## To do first
 

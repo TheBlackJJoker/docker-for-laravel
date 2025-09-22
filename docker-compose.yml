@@ -34,7 +34,7 @@ services:
     working_dir: /application
     volumes:
       - '.:/application'
-      - './phpdocker/php-fpm/php-ini-overrides.ini:/etc/php/8.2/fpm/conf.d/99-overrides.ini'
+      - './phpdocker/php-fpm/php-ini-overrides.ini:/etc/php/8.4/fpm/conf.d/99-overrides.ini'
     networks:
       - code-network
     container_name: ${DOCKER_PHP_FPM}
@@ -42,7 +42,7 @@ services:
       PHP_IDE_CONFIG: "serverName=Docker"
 
   node:
-    image: node:20-alpine3.16
+    image: node:22-alpine3.20
     container_name: ${DOCKER_NODE}
     working_dir: /application
     volumes:
