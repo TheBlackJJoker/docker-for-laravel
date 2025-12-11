@@ -1,45 +1,59 @@
-version: '3.1'
+version: '3.8'
 services:
   mysql:
     image: 'mysql:9.1'
-    working_dir: /application
-    volumes:
-      - '.:/application'
+    container_name: ${DOCKER_MYSQL}
     environment:
-      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
-      - MYSQL_DATABASE=${DB_DATABASE}
-      - MYSQL_USER=${DB_USERNAME}
-      - MYSQL_PASSWORD=${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_DATABASE}
+      MYSQL_USER: ${DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
     ports:
       - '61002:3306'
-      - '3306:3306'
+    volumes:
+      - mysql_data:/var/lib/mysql
     networks:
       - code-network
-    container_name: ${DOCKER_MYSQL}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u${DB_USERNAME} -p${DB_PASSWORD} || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   webserver:
     image: 'nginx:alpine'
+    container_name: ${DOCKER_WEBSERVER}
     working_dir: /application
     volumes:
-      - '.:/application'
-      - './phpdocker/nginx/nginx.conf:/etc/nginx/conf.d/default.conf'
+      - .:/application
+      - ./phpdocker/nginx/nginx.conf:/etc/nginx/conf.d/default.conf
     ports:
       - '61000:80'
     networks:
       - code-network
-    container_name: ${DOCKER_WEBSERVER}
+    depends_on:
+      - php-fpm
+    restart: unless-stopped
 
   php-fpm:
-    build: phpdocker/php-fpm
+    build:
+      context: ./phpdocker/php-fpm
+      args:
+        USER_ID: ${HOST_UID:-1000}
+        USER_GID: ${HOST_GID:-1000}
+    container_name: ${DOCKER_PHP_FPM}
     working_dir: /application
     volumes:
-      - '.:/application'
-      - './phpdocker/php-fpm/php-ini-overrides.ini:/etc/php/8.4/fpm/conf.d/99-overrides.ini'
+      - .:/application
+      - ./phpdocker/php-fpm/php-ini-overrides.ini:/etc/php/8.4/fpm/conf.d/99-overrides.ini
     networks:
       - code-network
-    container_name: ${DOCKER_PHP_FPM}
     environment:
       PHP_IDE_CONFIG: "serverName=Docker"
+    depends_on:
+      - mysql
+    restart: unless-stopped
 
   node:
     image: node:22-alpine3.20
@@ -55,6 +69,10 @@ services:
     stdin_open: true
     tty: true
     restart: unless-stopped
+
 networks:
   code-network:
     driver: bridge
+
+volumes:
+  mysql_data:

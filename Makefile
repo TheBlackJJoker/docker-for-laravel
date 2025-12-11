@@ -2,6 +2,12 @@ ifneq ("$(wildcard .env)", "")
     include .env
 endif
 
+# Domyślne nazwy kontenerów — można nadpisać w .env
+DOCKER_PHP_FPM ?= php-fpm
+DOCKER_NODE ?= node
+DOCKER_WEBSERVER ?= webserver
+DOCKER_MYSQL ?= mysql
+
 CURRENT_USER_ID = $(shell id --user)
 CURRENT_USER_GROUP_ID = $(shell id --group)
 
@@ -61,32 +67,38 @@ rebuild: check-env
 	docker-compose down -v --remove-orphans
 	docker-compose build
 	docker-compose up -d
+	docker exec --user root ${DOCKER_PHP_FPM} bash -c "chmod -R 777 /application/storage /application/bootstrap/cache"
 
 down: check-env
 	docker-compose down
 
 laravel: check-env check-laravel up
 	echo "Instalowanie Laravel w kontenerze ${DOCKER_PHP_FPM}..."
+	# tworzymy projekt w katalogu tymczasowym i przenosimy zawartość bez przerywania, obsługując brak plików
 	docker exec --user "${CURRENT_USER_ID}:${CURRENT_USER_GROUP_ID}" ${DOCKER_PHP_FPM} bash -c "composer create-project --prefer-dist laravel/laravel Laravel"
-	rm ./Laravel/vite.config.js
-	rm ./Laravel/.env
-	rm ./Laravel/README.md
-	rm ./Laravel/.env.example
-	rm ./Laravel/.gitignore
-	mv -v ./Laravel/* ./
-	mv -v ./Laravel/.[!.]* ./
-	rm -r ./Laravel
-	sudo chown -R "${CURRENT_USER_ID}:${CURRENT_USER_GROUP_ID}" storage bootstrap/cache
-	sudo chmod -R 777 storage bootstrap/cache
-	mv  ./welcome.blade.php ./resources/views/
+	# usuwamy kilka plików jeśli istnieją (bez przerywania make)
+	[ -f ./Laravel/vite.config.js ] && rm -f ./Laravel/vite.config.js || true
+	[ -f ./Laravel/.env ] && rm -f ./Laravel/.env || true
+	[ -f ./Laravel/README.md ] && rm -f ./Laravel/README.md || true
+	[ -f ./Laravel/.env.example ] && rm -f ./Laravel/.env.example || true
+	[ -f ./Laravel/.gitignore ] && rm -f ./Laravel/.gitignore || true
+	# przenosimy pliki (ignorujemy brak ukrytych plików jeśli żadne nie istnieją)
+	mv -v ./Laravel/* ./ || true
+	mv -v ./Laravel/.[!.]* ./ || true
+	rm -rf ./Laravel || true
+	# ustawianie uprawnień przez kontener (bez sudo) — wykonujemy jako root wewnątrz kontenera
+	docker exec --user root ${DOCKER_PHP_FPM} bash -c "chown -R ${CURRENT_USER_ID}:${CURRENT_USER_GROUP_ID} /application/storage /application/bootstrap/cache || true"
+	docker exec --user root ${DOCKER_PHP_FPM} bash -c "chmod -R ug+rwX /application/storage /application/bootstrap/cache || true"
+	mv  ./welcome.blade.php ./resources/views/ || true
 	mkdir -p public/assets/css
 	touch public/assets/css/style.css
 	docker exec --user "${CURRENT_USER_ID}:${CURRENT_USER_GROUP_ID}" ${DOCKER_PHP_FPM} bash -c "php artisan key:generate"
 	docker exec --user "${CURRENT_USER_ID}:${CURRENT_USER_GROUP_ID}" ${DOCKER_PHP_FPM} bash -c "php artisan storage:link"
 	sleep 5
-	docker exec --user "${CURRENT_USER_ID}:${CURRENT_USER_GROUP_ID}" ${DOCKER_PHP_FPM} bash -c "php artisan migrate"
-	sudo chown -R "${CURRENT_USER_ID}:${CURRENT_USER_GROUP_ID}" storage bootstrap/cache
-	sudo chmod -R 777 storage bootstrap/cache
+	docker exec --user "${CURRENT_USER_ID}:${CURRENT_USER_GROUP_ID}" ${DOCKER_PHP_FPM} bash -c "php artisan migrate --force"
+	# ponownie napraw uprawnienia (na wypadek, gdyby artisan utworzył pliki)
+	docker exec --user root ${DOCKER_PHP_FPM} bash -c "chown -R ${CURRENT_USER_ID}:${CURRENT_USER_GROUP_ID} /application/storage /application/bootstrap/cache || true"
+	docker exec --user root ${DOCKER_PHP_FPM} bash -c "chmod -R ug+rwX /application/storage /application/bootstrap/cache || true"
 	docker exec --user "${CURRENT_USER_ID}:${CURRENT_USER_GROUP_ID}" ${DOCKER_PHP_FPM} bash -c "php artisan config:clear"
 	docker exec --user "${CURRENT_USER_ID}:${CURRENT_USER_GROUP_ID}" ${DOCKER_PHP_FPM} bash -c "php artisan route:clear"
 	docker exec --user "${CURRENT_USER_ID}:${CURRENT_USER_GROUP_ID}" ${DOCKER_PHP_FPM} bash -c "php artisan view:clear"
@@ -99,6 +111,8 @@ php: check-env
 
 node-install: up
 	docker exec --user "${CURRENT_USER_ID}:${CURRENT_USER_GROUP_ID}" ${DOCKER_NODE} npm install
+	docker exec --user "${CURRENT_USER_ID}:${CURRENT_USER_GROUP_ID}" ${DOCKER_NODE} npm install tailwindcss @tailwindcss/vite
+
 dev: up
 	docker exec --user "${CURRENT_USER_ID}:${CURRENT_USER_GROUP_ID}" ${DOCKER_NODE} npm run dev
 
@@ -106,7 +120,8 @@ build: up
 	docker exec --user "${CURRENT_USER_ID}:${CURRENT_USER_GROUP_ID}" ${DOCKER_NODE} npm run build
 
 filament-install: check-env check-is-laravel up
-	docker exec --user "${CURRENT_USER_ID}:${CURRENT_USER_GROUP_ID}" ${DOCKER_PHP_FPM} bash -c "composer require filament/filament:"^3.2" -W"
+	# bezpieczniejsze cytowanie dla composer require
+	docker exec --user "${CURRENT_USER_ID}:${CURRENT_USER_GROUP_ID}" ${DOCKER_PHP_FPM} bash -c 'composer require "filament/filament:^4.0" -W'
 	docker exec -it --user "${CURRENT_USER_ID}:${CURRENT_USER_GROUP_ID}" ${DOCKER_PHP_FPM} bash -c "php artisan filament:install --panels"
 	docker exec -it --user "${CURRENT_USER_ID}:${CURRENT_USER_GROUP_ID}" ${DOCKER_PHP_FPM} bash -c "php artisan make:filament-user"
 	docker exec --user "${CURRENT_USER_ID}:${CURRENT_USER_GROUP_ID}" ${DOCKER_PHP_FPM} bash -c "php artisan optimize"
